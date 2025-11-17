@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<title>Test – Kačenka</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+body { font-family: Arial, sans-serif; margin: 20px; max-width: 900px; }
+.hidden { display: none; }
+.login-box { max-width: 400px; margin: auto; padding: 20px; border: 1px solid #ccc; border-radius: 10px; }
+input { width: 100%; padding: 8px; margin: 6px 0; }
+button { padding: 8px 12px; margin: 5px; border: none; border-radius: 6px; background: #007bff; color: white; cursor: pointer; }
+button.danger { background: #d9534f; }
+button.neutral { background: #6c757d; }
+.question { padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin: 10px 0; }
+.answers { display: flex; flex-direction: column; gap: 6px; }
+.answer-btn { padding: 8px; border-radius: 6px; border: 1px solid #333; background: white; cursor: pointer; text-align: left; }
+.answer-btn.correct { background: #28a745; color: white; }
+.answer-btn.wrong { background: #dc3545; color: white; }
+.topbar { display: flex; justify-content: space-between; align-items: center; }
+.status.online { color: blue; }
+.status.offline { color: gray; }
+.result-item { padding: 8px; border-bottom: 1px solid #ccc; }
+</style>
+</head>
+
+<body>
+<h1>Interaktivní test – Kačenka</h1>
+
+<!-- ================== LOGIN ================== -->
+<div id="login" class="login-box">
+  <h2>Přihlášení</h2>
+  <label>Jméno:</label>
+  <input id="username" type="text">
+  <label>Heslo:</label>
+  <input id="password" type="password">
+  <button id="loginBtn">Přihlásit</button>
+  <p style="font-size: 12px; color: gray;">
+    Účty: Kačenka / Kacenka55dg5<br>
+    Rodič / domkac23
+  </p>
+</div>
+
+<!-- ================== STUDENT VIEW ================== -->
+<div id="studentView" class="hidden">
+  <div class="topbar">
+    <div><b id="studentName"></b> • <span id="studentStatus" class="status online">dělá test</span></div>
+    <button id="exitStudent" class="neutral">Exit</button>
+  </div>
+
+  <h2>Test</h2>
+  <div id="questions"></div>
+
+  <button id="submitAnswers">Poslat odpovědi</button>
+  <button id="resetAnswers" class="neutral">Resetovat test</button>
+
+  <p id="studentMsg"></p>
+</div>
+
+<!-- ================== PARENT VIEW ================== -->
+<div id="parentView" class="hidden">
+  <div class="topbar">
+    <b>Rodič</b>
+    <button id="exitParent" class="neutral">Exit</button>
+  </div>
+
+  <h2>Menu</h2>
+  <button id="showTestStructure">Jak vypadá test?</button>
+  <button id="showKacenkaResults">Výsledky Kačenky</button>
+
+  <div id="parentArea"></div>
+</div>
+
+<!-- ================== FIREBASE ================== -->
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+
+<script>
+/* ==========================================================
+   🔥 1) DOPLŇ SI SVŮJ FIREBASE CONFIG !!!
+   ========================================================== */
+const firebaseConfig = {
+  apiKey: "DOPLNIT",
+  authDomain: "DOPLNIT",
+  projectId: "DOPLNIT",
+  storageBucket: "DOPLNIT",
+  messagingSenderId: "DOPLNIT",
+  appId: "DOPLNIT"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+/* ==========================================================
+   Otázky
+   ========================================================== */
+const QUESTIONS = [
+  {
+    id: 1,
+    text: "Vyber správnou skupinu obilí",
+    correct: "a",
+    options: {
+      a: "Pšenice, Ječmen, Oves, Žito",
+      b: "Hrách, Fazole, Čočka",
+      c: "Pšenice, Ječmen, Hrách, Čočka"
+    }
+  },
+  {
+    id: 2,
+    text: "Vyber správnou skupinu luštěnin",
+    correct: "b",
+    options: {
+      a: "Hrách, Kočka, Fazole",
+      b: "Hrách, Čočka, Fazole",
+      c: "Žito, Ječmen, Čočka"
+    }
+  },
+  {
+    id: 3,
+    text: "Z čeho se skládá obilí?",
+    correct: "a",
+    options: {
+      a: "Zrno, Klas, Stéblo, Kořen",
+      b: "List, Zrno, Stéblo, Kořen",
+      c: "Kořen, Stonek, List"
+    }
+  },
+  {
+    id: 4,
+    text: "Co mohou být také zemědělské plodiny?",
+    correct: "c",
+    options: {
+      a: "Brambory, Řepa, Jahoda, Slunečnice",
+      b: "Brambory, Řepa, Kukuřice, Brambory",
+      c: "Brambory, Řepa, Kukuřice, Slunečnice"
+    }
+  },
+  {
+    id: 5,
+    text: "Rozdíl mezi sázením a setím",
+    correct: "a",
+    options: {
+      a: "Seje se semeno, Sází se rostlinka",
+      b: "Seje se rostlinka, Sází se semeno"
+    }
+  }
+];
+
+/* ==========================================================
+   Login
+   ========================================================== */
+let currentUser = null;
+
+document.getElementById("loginBtn").onclick = async () => {
+  const u = username.value.trim();
+  const p = password.value;
+
+  const users = db.collection("users");
+  const q = await users.where("username","==",u).where("password","==",p).get();
+
+  if (q.empty) { alert("Špatné jméno nebo heslo"); return; }
+
+  const doc = q.docs[0];
+  currentUser = { id: doc.id, ...doc.data() };
+
+  login.classList.add("hidden");
+
+  if (currentUser.role === "student") {
+    showStudent();
+  } else {
+    showParent();
+  }
+};
+
+/* ==========================================================
+   Student view
+   ========================================================== */
+let answers = {};
+
+function showStudent(){
+  studentName.textContent = currentUser.username;
+  studentView.classList.remove("hidden");
+
+  renderQuestions();
+
+  db.collection("users").doc(currentUser.id).update({status:"online"});
+}
+
+function renderQuestions(){
+  questions.innerHTML = "";
+
+  QUESTIONS.forEach(q=>{
+    const div = document.createElement("div");
+    div.className = "question";
+    div.innerHTML = `<b>${q.id}. ${q.text}</b>`;
+
+    const wrap = document.createElement("div");
+    wrap.className = "answers";
+
+    for (let key in q.options){
+      const btn = document.createElement("button");
+      btn.className = "answer-btn";
+      btn.textContent = q.options[key];
+
+      btn.onclick = () => {
+        answers[q.id] = key;
+
+        // zbarvení
+        [...wrap.children].forEach(b=>b.classList.remove("correct","wrong"));
+        if (key === q.correct) btn.classList.add("correct");
+        else {
+          btn.classList.add("wrong");
+          const correctBtn = [...wrap.children].find(b=>b.textContent===q.options[q.correct]);
+          if(correctBtn) correctBtn.classList.add("correct");
+        }
+      };
+
+      wrap.appendChild(btn);
+    }
+
+    div.appendChild(wrap);
+    questions.appendChild(div);
+  });
+}
+
+submitAnswers.onclick = async () => {
+  let correct = 0;
+  QUESTIONS.forEach(q=>{
+    if (answers[q.id] === q.correct) correct++;
+  });
+
+  await db.collection("tests").add({
+    userId: currentUser.id,
+    userName: currentUser.username,
+    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+    answers,
+    correct,
+    wrong: QUESTIONS.length - correct
+  });
+
+  db.collection("users").doc(currentUser.id).update({status:"offline"});
+
+  studentMsg.textContent = "Odpovědi odeslány!";
+};
+
+resetAnswers.onclick = () => {
+  answers = {};
+  renderQuestions();
+};
+
+exitStudent.onclick = () => location.reload();
+
+/* ==========================================================
+   Parent view
+   ========================================================== */
+function showParent(){
+  parentView.classList.remove("hidden");
+}
+
+/* Test struktura */
+showTestStructure.onclick = () => {
+  parentArea.innerHTML = "<h3>Struktura testu</h3>";
+
+  QUESTIONS.forEach(q=>{
+    const d = document.createElement("div");
+    d.className = "question";
+    d.innerHTML = `<b>${q.id}. ${q.text}</b><br>`;
+
+    for(let key in q.options){
+      const item = document.createElement("div");
+      item.textContent = `${key}) ${q.options[key]}`;
+      if (key === q.correct) item.style.color = "green";
+      parentArea.appendChild(d);
+      d.appendChild(item);
+    }
+  });
+};
+
+/* Výsledky Kačenky */
+showKacenkaResults.onclick = async () => {
+  parentArea.innerHTML = "<h3>Výsledky Kačenky</h3>";
+
+  const userQ = await db.collection("users")
+    .where("username","==","Kačenka")
+    .get();
+
+  if (userQ.empty){
+    parentArea.innerHTML += "<p>Účet Kačenka nenalezen.</p>";
+    return;
+  }
+
+  const userId = userQ.docs[0].id;
+  const tests = await db.collection("tests")
+    .where("userId","==",userId)
+    .orderBy("timestamp","desc")
+    .get();
+
+  const status = userQ.docs[0].data().status;
+  parentArea.innerHTML += `<p>Status: <b style="color:${status==="online"?"blue":"gray"}">${status==="online"?"Kačenka dělá test":"Kačenka je offline"}</b></p>`;
+
+  tests.forEach(t=>{
+    const data = t.data();
+    const d = document.createElement("div");
+    d.className = "result-item";
+    d.innerHTML = `
+      <b>${new Date(data.timestamp?.toDate()).toLocaleString()}</b><br>
+      Správně: ${data.correct}/5 • Špatně: ${data.wrong}/5<br>
+      <button class="neutral" onclick="showTestDetail('${t.id}')">Podívat se na její test</button>
+    `;
+    parentArea.appendChild(d);
+  });
+};
+
+/* Detail testu */
+async function showTestDetail(id){
+  const doc = await db.collection("tests").doc(id).get();
+  const data = doc.data();
+
+  parentArea.innerHTML = "<h3>Detail testu</h3>";
+
+  QUESTIONS.forEach(q=>{
+    const d = document.createElement("div");
+    d.className = "question";
+    d.innerHTML = `<b>${q.id}. ${q.text}</b>`;
+
+    const wrap = document.createElement("div");
+    wrap.className = "answers";
+
+    for (let key in q.options){
+      const btn = document.createElement("div");
+      btn.className = "answer-btn";
+      btn.textContent = q.options[key];
+
+      if (data.answers[q.id] === key && key === q.correct)
+        btn.classList.add("correct");
+      else if (data.answers[q.id] === key && key !== q.correct)
+        btn.classList.add("wrong");
+
+      wrap.appendChild(btn);
+    }
+
+    d.appendChild(wrap);
+    parentArea.appendChild(d);
+  });
+}
+
+exitParent.onclick = () => location.reload();
+
+</script>
+
+</body>
+</html>
